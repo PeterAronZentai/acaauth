@@ -1,23 +1,21 @@
-using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
-var config = new {
-    Instance = "https://login.microsoftonline.com/",
-    ClientId = "47285f80-f9c8-4f5f-a99c-cc71347bff26",
-    TenantId = "24adaeaa-5002-4f6e-aa57-b66c036ba791",
-    Scopes = new  string[] { "Global.API" },
-};
+var azureADconfig = builder.Configuration.GetSection("AzureAd");
+
 // Add services to the container.
 // Learn more about configuring Swagger/OpenAPI at https://aka.ms/aspnetcore/swashbuckle
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen();
 
 builder.Services.AddAuthentication(JwtBearerDefaults.AuthenticationScheme)
-        .AddMicrosoftIdentityWebApi(config);
-var scopes = config.Scopes;
-// Adding authorization policies that enforce authorization using Azure AD roles.
+        .AddMicrosoftIdentityWebApi(azureADconfig);
+
+var scopes = azureADconfig.GetSection("Scopes").Get<string[]>();
+
 builder.Services.AddAuthorization(options =>
 {
     options.AddPolicy("DefaultScope",
@@ -26,9 +24,13 @@ builder.Services.AddAuthorization(options =>
             .RequireAuthenticatedUser()
             .RequireScope(scopes));
 });
+
 builder.Services.AddRequiredScopeAuthorization();
 
 var app = builder.Build();
+
+app.UseAuthentication();
+app.UseAuthorization();
 
 // Configure the HTTP request pipeline.
 if (app.Environment.IsDevelopment())
@@ -42,25 +44,37 @@ var summaries = new[]
     "Freezing", "Bracing", "Chilly", "Cool", "Mild", "Warm", "Balmy", "Hot", "Sweltering", "Scorching"
 };
 
-
-app.MapGet("/weatherforecast", [Authorize]() =>
+app.MapGet("/weatherforecastFree", () =>
 {
-    var forecast =  Enumerable.Range(1, 5).Select(index =>
+    var forecast = Enumerable.Range(1, 5).Select(index =>
         new WeatherForecast
         (
-            DateOnly.FromDateTime(DateTime.Now.AddDays(index)),
+            DateOnly.FromDateTime(DateTime.Now.AddDays(index)).ToShortDateString(),
             Random.Shared.Next(-20, 55),
             summaries[Random.Shared.Next(summaries.Length)]
         ))
         .ToArray();
     return forecast;
 })
-.WithName("GetWeatherForecast")
-.WithOpenApi();
+.WithName("GetWeatherForecastFree");
+
+app.MapGet("/weatherforecastPaid", [Authorize]() =>
+{
+    var forecast =  Enumerable.Range(1, 5).Select(index =>
+        new WeatherForecast
+        (
+            DateOnly.FromDateTime(DateTime.Now.AddDays(index)).ToShortDateString(),
+            Random.Shared.Next(-20, 55),
+            summaries[Random.Shared.Next(summaries.Length)]
+        ))
+        .ToArray();
+    return forecast;
+})
+.WithName("GetWeatherForecastPaid");
 
 app.Run();
 
-record WeatherForecast(DateOnly Date, int TemperatureC, string? Summary)
+record WeatherForecast(string Date, int TemperatureC, string? Summary)
 {
     public int TemperatureF => 32 + (int)(TemperatureC / 0.5556);
 }
